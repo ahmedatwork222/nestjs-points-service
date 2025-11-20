@@ -179,16 +179,6 @@ export class PointsService {
   }
 
   /**
-   * Get balance for a specific payer
-   * Time Complexity: O(n) - must scan all transactions
-   */
-  private getPayerBalance(payer: string): number {
-    return this.transactions
-      .filter((t) => t.payer === payer)
-      .reduce((sum, t) => sum + t.points, 0);
-  }
-
-  /**
    * Get total points across all payers
    * Time Complexity: O(n) - must scan all transactions
    */
