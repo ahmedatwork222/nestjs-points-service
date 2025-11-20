@@ -18,6 +18,7 @@ export class PointsService {
 
   /**
    * Add a new transaction
+   * Time Complexity: O(1) - array push operation
    */
   addTransaction(transactionDto: TransactionDto): Transaction {
     const transaction: Transaction = {
@@ -35,21 +36,32 @@ export class PointsService {
    * 1. Oldest points (by transaction date) are spent first
    * 2. No payer's points can go below zero
    * 
-   * Algorithm:
+   * Algorithm: Greedy approach
    * - Sort all transactions by timestamp (oldest first)
    * - Process each transaction chronologically
    * - For positive transactions: spend available points
    * - For negative transactions: adjust previous spending (like a refund)
    * - Ensure no payer's balance goes negative
    * - Record spending as new negative transactions
+   * 
+   * Time Complexity: O(n log n) where n = number of transactions
+   * - Pre-compute balances: O(n)
+   * - Sorting: O(n log n)
+   * - Processing transactions: O(n) with O(1) balance lookups
+   * - Overall: O(n log n) dominated by sorting (guaranteed, no worst case degradation)
+   * 
+   * Space Complexity: O(n + p) where p = number of unique payers
+   * - Sorted array copy: O(n)
+   * - Balance map: O(p)
+   * - Spending map: O(p)
    */
   spendPoints(pointsToSpend: number): SpendResult[] {
-    // Validation: ensure positive amount
+    // Validation: ensure positive amount - O(1)
     if (pointsToSpend < 0) {
       throw new BadRequestException('Points to spend must be positive');
     }
 
-    // Validation: check if we have enough total points
+    // Validation: check if we have enough total points - O(n)
     const totalPoints = this.getTotalPoints();
     if (totalPoints < pointsToSpend) {
       throw new BadRequestException(
@@ -57,18 +69,26 @@ export class PointsService {
       );
     }
 
-    // Step 1: Sort transactions by timestamp (oldest first)
+    // Step 1: Sort transactions by timestamp (oldest first) - O(n log n)
     // Using spread operator [...] to create a copy and not mutate original array
     const sortedTransactions = [...this.transactions].sort(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
     );
 
-    // Step 2: Track how much we're spending from each payer using a Map
+    // Step 2: Pre-compute current balances for all payers - O(n)
+    // This optimization reduces worst case from O(n²) to O(n log n)
+    const payerBalances: Map<string, number> = new Map();
+    for (const transaction of this.transactions) {
+      const currentBalance = payerBalances.get(transaction.payer) || 0;
+      payerBalances.set(transaction.payer, currentBalance + transaction.points);
+    }
+
+    // Step 3: Track how much we're spending from each payer using a Map - O(1)
     const spendingByPayer: Map<string, number> = new Map();
 
     let remainingToSpend = pointsToSpend;
 
-    // Step 3: Process transactions in chronological order
+    // Step 4: Process transactions in chronological order - O(n) total
     for (const transaction of sortedTransactions) {
       if (remainingToSpend <= 0) {
         break; // We've spent all required points
@@ -77,9 +97,9 @@ export class PointsService {
       const payer = transaction.payer;
       const transactionPoints = transaction.points;
 
-      // Get this payer's total current balance across all their transactions
-      const currentPayerBalance = this.getPayerBalance(payer);
-      // Get how much we've already decided to spend from this payer
+      // Get this payer's total current balance - O(1) Map lookup (pre-computed!)
+      const currentPayerBalance = payerBalances.get(payer) || 0;
+      // Get how much we've already decided to spend from this payer - O(1) Map lookup
       const currentSpending = spendingByPayer.get(payer) || 0;
 
       if (transactionPoints > 0) {
@@ -120,7 +140,7 @@ export class PointsService {
       }
     }
 
-    // Step 4: Convert spending map to result array
+    // Step 5: Convert spending map to result array - O(p) where p = number of payers
     // Points are negative to indicate they were spent (deducted)
     const result: SpendResult[] = [];
     spendingByPayer.forEach((points, payer) => {
@@ -129,7 +149,7 @@ export class PointsService {
       }
     });
 
-    // Step 5: Record these spending transactions in our transaction history
+    // Step 6: Record these spending transactions in our transaction history - O(p)
     // This ensures future balance calculations include this spending
     const now = new Date();
     result.forEach((spend) => {
@@ -145,6 +165,7 @@ export class PointsService {
 
   /**
    * Get balances for all payers
+   * Time Complexity: O(n) - iterate through all transactions once
    */
   getBalances(): Record<string, number> {
     const balances: Record<string, number> = {};
@@ -159,6 +180,7 @@ export class PointsService {
 
   /**
    * Get balance for a specific payer
+   * Time Complexity: O(n) - must scan all transactions
    */
   private getPayerBalance(payer: string): number {
     return this.transactions
@@ -168,6 +190,7 @@ export class PointsService {
 
   /**
    * Get total points across all payers
+   * Time Complexity: O(n) - must scan all transactions
    */
   private getTotalPoints(): number {
     return this.transactions.reduce((sum, t) => sum + t.points, 0);
